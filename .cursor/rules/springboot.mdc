@@ -1,0 +1,137 @@
+---
+description: Spring Boot + Java 25 standards for reservation-backend
+alwaysApply: true
+---
+
+# Spring Boot — reservation-backend
+
+Stack: **Java 25**, **Spring Boot 4.x**, **Spring WebMVC**, **Spring Data JPA**, **PostgreSQL**, **springdoc-openapi**.
+
+Base package: `co.bog.felaverde.reservation`
+
+## Language and naming
+
+- **All** class, method, field, enum, and record component names in **English** (camelCase for members, PascalCase for types).
+- Package names: lowercase, no underscores (`co.bog.felaverde.reservation.*`).
+- REST paths: kebab-case plural nouns (`/api/v1/reservations`).
+- Prefer intention-revealing names; avoid abbreviations unless standard (`id`, `dto`, `api`).
+
+## Project structure
+
+Place code under `src/main/java/co/bog/felaverde/reservation/`:
+
+```
+reservation/
+├── ReservationBackendApplication.java
+├── config/                 # @Configuration, beans, OpenAPI, CORS, etc.
+├── controller/             # @RestController — HTTP only, no business logic
+├── service/                # Business interfaces
+│   └── impl/               # @Service implementations
+├── repository/             # Spring Data JPA interfaces
+├── entity/                 # @Entity persistence models (never exposed in API)
+├── dto/
+│   ├── request/            # Incoming payloads (Java records)
+│   └── response/           # Outgoing payloads (Java records)
+├── mapper/                 # Entity ↔ DTO mapping (or static factories on records)
+├── exception/              # Domain exceptions + @RestControllerAdvice handler
+└── util/                   # Stateless helpers only (keep minimal)
+```
+
+Tests mirror production packages under `src/test/java/.../reservation/`.
+
+Resources: `src/main/resources/application.properties` (or profile-specific `application-{profile}.properties`).
+
+## Layer responsibilities
+
+| Layer | Responsibility |
+|-------|----------------|
+| **controller** | Validate input (`@Valid`), map HTTP ↔ service, return `ResponseEntity` |
+| **service** | Business rules, transactions, orchestration |
+| **repository** | Persistence queries only |
+| **entity** | DB mapping; no API annotations beyond JPA |
+| **dto** | API contracts only |
+
+**Never** return JPA `entity` types from controllers. Map to `dto.response` records.
+
+## DTOs — Java records
+
+- All request/response DTOs are **`public record`** in `dto.request` / `dto.response`.
+- Use compact canonical constructors + validation annotations on components when needed.
+- Immutability by default; use `with*` only if a copy variant is truly required.
+
+```java
+// dto/request/CreateReservationRequest.java
+public record CreateReservationRequest(
+    @NotNull @Future LocalDateTime startAt,
+    @NotBlank String customerEmail
+) {}
+```
+
+## Javadoc
+
+- Every **public** method (and public class/interface) must have up-to-date Javadoc.
+- Include `@param`, `@return`, `@throws` when applicable.
+- Describe **behavior and contracts**, not obvious syntax.
+
+```java
+/**
+ * Creates a reservation if the slot is available.
+ *
+ * @param request validated reservation data
+ * @return the created reservation view
+ * @throws SlotUnavailableException when the time slot is already booked
+ */
+public ReservationResponse createReservation(CreateReservationRequest request);
+```
+
+## Java 25 practices
+
+- Use **records** for DTOs and small immutable value types.
+- Prefer **constructor injection**; no field `@Autowired`.
+- Use `Optional` as **return type** only, not method parameters or fields.
+- Use `var` only when the type is obvious from the RHS.
+- Prefer **switch expressions** and pattern matching over long if-else chains.
+- Use **text blocks** for multi-line SQL or messages when clearer.
+- Favor `List.of()`, `Map.of()`, `Set.copyOf()` for immutable collections.
+- Enable null-safety discipline: validate at boundaries (`@NotNull`, `@Valid`).
+
+## Spring Boot practices
+
+- Annotate layers: `@RestController`, `@Service`, `@Repository`.
+- Put `@Transactional` on **service** layer (read-only for queries).
+- Controllers: thin; delegate to services; use `ResponseEntity` with correct HTTP status.
+- Validation: `jakarta.validation` on DTOs + `@Valid` on controller parameters.
+- Configuration: externalize in `application.properties`; no secrets in source control.
+- API docs: annotate controllers/DTOs for **springdoc-openapi** (`@Tag`, `@Operation`, `@Schema` where useful).
+- Global errors: `@RestControllerAdvice` with consistent error body (message, code, timestamp).
+- Logging: SLF4J (`private static final Logger log`); no `System.out.println`.
+- IDs: `UUID` or `Long` consistently per aggregate; document choice in entity Javadoc.
+
+## JPA / persistence
+
+- Entities in `entity/` with explicit table/column names when needed.
+- Use `FetchType.LAZY` by default; avoid N+1 (join fetch or `@EntityGraph` in repository).
+- Repository methods: Spring Data naming or `@Query`; no business logic in repositories.
+- Do not use `open-in-view` as a crutch; fetch required data in the service layer.
+
+## REST API conventions
+
+- Base path: `/api/v1/...`
+- JSON property names: **camelCase** (default Jackson).
+- Use proper status codes: `201` + `Location` on create, `204` on delete, `404`/`409`/`400` with clear bodies.
+- Pagination: `Pageable` + stable sort fields for list endpoints.
+
+## Testing
+
+- Unit tests: service logic with mocked dependencies.
+- Slice/`@WebMvcTest` for controllers; `@DataJpaTest` for repositories when needed.
+- Integration tests: `@SpringBootTest` + Testcontainers for PostgreSQL when testing persistence.
+- Test method names in English: `shouldReturn404WhenReservationNotFound`.
+
+## What to avoid
+
+- Business logic in controllers or repositories.
+- Mutable DTOs (classes with setters for API payloads).
+- Field injection, static mutable state, catching generic `Exception` without rethrowing.
+- Exposing stack traces or internal details in API error responses.
+- Spanish (or mixed) identifiers in code — English only for code; Spanish OK in user-facing messages if product requires it.
